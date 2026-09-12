@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Facturen — Joost de Vos</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23b6821a'/%3E%3Ctext x='32' y='45' font-size='38' font-family='Georgia,serif' font-weight='600' fill='white' text-anchor='middle'%3E%E2%82%AC%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<style>
+  :root{
+    --ink:#2b2419; --ink-soft:#6f6350; --paper:#fbf8f1; --panel:#ffffff;
+    --comb:#eee2bd; --line:#ddd2b0; --honey:#b6821a; --honey-dark:#8f660f;
+    --danger:#a4402f; --radius:3px;
+  }
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--paper); color:var(--ink); font-family:'Work Sans', sans-serif; font-size:14px; line-height:1.5; }
+  .app{ max-width:1180px; margin:0 auto; padding:28px 20px 60px; }
+  .app-header{ display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:10px; margin-bottom:22px; border-bottom:1px solid var(--line); padding-bottom:16px; }
+  .app-header h1{ font-family:'Spectral', serif; font-weight:500; font-size:26px; margin:0; }
+  .app-header h1 span{ color:var(--honey-dark); }
+  .header-actions{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .whoami{ font-size:12px; color:var(--ink-soft); margin-right:6px; }
+
+  button{ font-family:'Work Sans', sans-serif; font-size:13px; font-weight:500; border-radius:var(--radius); border:1px solid var(--line); background:var(--panel); color:var(--ink); padding:8px 14px; cursor:pointer; }
+  button:hover{ border-color:var(--ink-soft); }
+  button.primary{ background:var(--honey); border-color:var(--honey); color:#fff; }
+  button.primary:hover{ background:var(--honey-dark); border-color:var(--honey-dark); }
+  button.ghost{ background:transparent; border-color:transparent; color:var(--ink-soft); padding:6px 8px; }
+  button.ghost:hover{ color:var(--danger); border-color:transparent; }
+  button.small{ padding:5px 10px; font-size:12px; }
+  button:disabled{ opacity:0.5; cursor:default; }
+
+  .profile-panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px; margin-bottom:22px; }
+  .profile-panel h2{ font-size:14px; margin:0 0 12px; font-weight:600; color:var(--ink-soft); }
+  .grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; }
+
+  label{ display:block; font-size:12px; color:var(--ink-soft); margin-bottom:3px; }
+  input, select, textarea{ width:100%; font-family:'Work Sans', sans-serif; font-size:13.5px; padding:7px 9px; border:1px solid var(--line); border-radius:var(--radius); background:#fff; color:var(--ink); }
+  input:focus, select:focus, textarea:focus{ outline:none; border-color:var(--honey); }
+  .field{ margin-bottom:12px; }
+
+  .layout{ display:grid; grid-template-columns:minmax(320px, 420px) 1fr; gap:22px; align-items:start; }
+  @media (max-width: 880px){ .layout{ grid-template-columns:1fr; } .grid-2{ grid-template-columns:1fr; } }
+
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:18px; }
+  .panel h2{ font-family:'Spectral', serif; font-size:17px; font-weight:500; margin:0 0 14px; }
+
+  .row-2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+  .line-items{ margin-top:6px; }
+  .line-item{ display:grid; grid-template-columns:56px 1fr 90px 72px 30px; gap:6px; align-items:start; margin-bottom:8px; }
+  .line-item input, .line-item select{ font-size:13px; padding:6px 7px; }
+  .line-item .remove-btn{ background:transparent; border:none; color:var(--ink-soft); font-size:16px; line-height:1; padding:6px 2px; }
+  .line-item .remove-btn:hover{ color:var(--danger); }
+  .line-head{ display:grid; grid-template-columns:56px 1fr 90px 72px 30px; gap:6px; font-size:11px; color:var(--ink-soft); margin-bottom:6px; }
+  .add-line{ margin-top:4px; }
+
+  .totals-box{ margin-top:16px; padding-top:12px; border-top:1px solid var(--line); font-size:13.5px; }
+  .totals-box .trow{ display:flex; justify-content:space-between; padding:3px 0; color:var(--ink-soft); }
+  .totals-box .trow.grand{ color:var(--ink); font-weight:600; font-size:15px; border-top:1px solid var(--line); margin-top:6px; padding-top:8px; }
+
+  .actions-row{ display:flex; gap:8px; margin-top:18px; flex-wrap:wrap; }
+  .status-msg{ font-size:12px; margin-top:8px; min-height:16px; color:var(--ink-soft); }
+  .status-msg.error{ color:var(--danger); }
+
+  #preview-wrap{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:0; overflow:hidden; }
+  #preview-wrap h2{ padding:18px 18px 0; }
+  .doc{ font-family:'Spectral', serif; color:#1c1710; padding:34px 38px 30px; background:#fff; }
+  .doc-top{ display:flex; justify-content:space-between; gap:20px; margin-bottom:34px; }
+  .doc-from{ text-align:right; font-size:12.5px; line-height:1.5; }
+  .doc-from .name{ font-weight:600; font-size:13px; }
+  .doc-to{ font-size:12.5px; line-height:1.5; padding-top:6px; }
+  .doc-heading{ display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:18px; flex-wrap:wrap; gap:10px; }
+  .doc-heading h3{ font-size:24px; font-weight:500; margin:0; }
+  .doc-heading .kenmerk{ font-family:'Work Sans', sans-serif; font-size:12px; color:#6f6350; margin-top:2px; }
+  .doc-meta{ text-align:right; font-family:'Work Sans', sans-serif; font-size:12.5px; }
+  .doc-meta div{ margin-bottom:2px; }
+  .doc-meta b{ font-weight:600; margin-right:10px; }
+  table.doc-table{ width:100%; border-collapse:collapse; font-family:'Work Sans', sans-serif; font-size:12.5px; margin-top:6px; }
+  table.doc-table th{ text-align:left; font-weight:600; border-bottom:1.5px solid #1c1710; padding:6px 4px; }
+  table.doc-table th.num, table.doc-table td.num{ text-align:right; }
+  table.doc-table td{ padding:8px 4px; vertical-align:top; border-bottom:1px solid #eee2bd; }
+  .doc-totals{ font-family:'Work Sans', sans-serif; font-size:12.5px; margin-left:auto; margin-top:4px; width:260px; }
+  .doc-totals .drow{ display:flex; justify-content:space-between; padding:5px 4px; border-bottom:1px solid #eee2bd; }
+  .doc-totals .drow.grand{ font-weight:700; border-top:1.5px solid #1c1710; border-bottom:none; margin-top:2px; padding-top:8px; }
+  .doc-footer{ margin-top:40px; padding-top:14px; border-top:1px solid #ddd2b0; font-family:'Work Sans', sans-serif; font-size:11.5px; color:#6f6350; }
+
+  .saved-panel{ margin-top:24px; }
+  table.saved-table{ width:100%; border-collapse:collapse; font-size:13px; }
+  table.saved-table th{ text-align:left; font-size:11px; color:var(--ink-soft); font-weight:600; padding:6px 8px; border-bottom:1px solid var(--line); }
+  table.saved-table td{ padding:9px 8px; border-bottom:1px solid var(--line); }
+  table.saved-table td.num{ text-align:right; }
+  table.saved-table tr:hover td{ background:#fbf6e8; }
+  .empty-note{ color:var(--ink-soft); font-size:13px; padding:10px 4px; }
+
+  /* Login screen */
+  #login-screen{ max-width:360px; margin:80px auto; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:28px; }
+  #login-screen h1{ font-family:'Spectral', serif; font-size:22px; margin:0 0 4px; }
+  #login-screen p.sub{ color:var(--ink-soft); font-size:13px; margin:0 0 20px; }
+  #login-tabs{ display:flex; gap:6px; margin-bottom:16px; }
+  #login-tabs button{ flex:1; }
+  #login-tabs button.active{ background:var(--comb); border-color:var(--honey); }
+
+  @media print{
+    body *{ visibility:hidden; }
+    #preview-wrap, #preview-wrap *{ visibility:visible; }
+    #preview-wrap{ position:absolute; left:0; top:0; width:100%; border:none; }
+    #preview-wrap h2{ display:none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <h1>Facturen <span style="color:#b6821a">·</span></h1>
+  <p class="sub">Log in om je facturen te beheren.</p>
+  <div id="login-tabs">
+    <button id="tab-signin" class="active small">Inloggen</button>
+    <button id="tab-signup" class="small">Account maken</button>
+  </div>
+  <div class="field"><label>E-mail</label><input id="login-email" type="email" autocomplete="username"></div>
+  <div class="field"><label>Wachtwoord</label><input id="login-password" type="password" autocomplete="current-password"></div>
+  <button id="login-submit-btn" class="primary" style="width:100%;">Inloggen</button>
+  <div id="login-status" class="status-msg"></div>
+</div>
+
+<div class="app" id="app-screen" style="display:none;">
+
+  <div class="app-header">
+    <h1>Facturen <span>· Joost de Vos</span></h1>
+    <div class="header-actions">
+      <span class="whoami" id="whoami"></span>
+      <button id="toggle-profile-btn" class="small">Mijn gegevens</button>
+      <button id="new-invoice-btn" class="small">Nieuwe factuur</button>
+      <button id="logout-btn" class="small">Uitloggen</button>
+    </div>
+  </div>
+
+  <div id="profile-panel" class="profile-panel" style="display:none;">
+    <h2>Mijn bedrijfsgegevens (voor op de factuur)</h2>
+    <div class="grid-2">
+      <div class="field"><label>Naam</label><input id="p-name"></div>
+      <div class="field"><label>E-mail</label><input id="p-email"></div>
+      <div class="field"><label>Adres</label><input id="p-address"></div>
+      <div class="field"><label>Telefoon</label><input id="p-phone"></div>
+      <div class="field"><label>Postcode en plaats</label><input id="p-city"></div>
+      <div class="field"><label>Btw-nummer</label><input id="p-btw"></div>
+      <div class="field"><label>IBAN</label><input id="p-iban"></div>
+      <div class="field"><label>Betaaltermijn (dagen)</label><input id="p-terms" type="number" min="0"></div>
+    </div>
+    <div class="actions-row" style="margin-top:6px;">
+      <button id="save-profile-btn" class="primary small">Gegevens opslaan</button>
+    </div>
+    <div id="profile-status" class="status-msg"></div>
+  </div>
+
+  <div class="layout">
+
+    <div class="panel">
+      <h2>Factuurgegevens</h2>
+
+      <div class="row-2">
+        <div class="field"><label>Factuurnummer</label><input id="f-number"></div>
+        <div class="field"><label>Kenmerk</label><input id="f-kenmerk" placeholder="bijv. Industry Relations"></div>
+      </div>
+      <div class="row-2">
+        <div class="field"><label>Factuurdatum</label><input id="f-date" type="date"></div>
+        <div class="field"><label>Vervaldatum</label><input id="f-due" type="date"></div>
+      </div>
+
+      <div class="field"><label>Klant — naam / t.a.v.</label><input id="f-client-name" placeholder="Hotelschool The Hague, t.a.v. Paul Griep"></div>
+      <div class="field"><label>Klant — straat en huisnummer</label><input id="f-client-address"></div>
+      <div class="field"><label>Klant — postcode en plaats</label><input id="f-client-city"></div>
+
+      <div class="line-items">
+        <label style="margin-bottom:8px;">Regels</label>
+        <div class="line-head"><div>Aantal</div><div>Omschrijving</div><div>Prijs (€)</div><div>Btw</div><div></div></div>
+        <div id="line-items-container"></div>
+        <button id="add-line-btn" class="small add-line">+ Regel toevoegen</button>
+      </div>
+
+      <div class="totals-box" id="totals-box"></div>
+
+      <div class="actions-row">
+        <button id="save-invoice-btn" class="primary">Factuur opslaan</button>
+        <button id="export-pdf-btn">Exporteren als PDF</button>
+      </div>
+      <div id="form-status" class="status-msg"></div>
+    </div>
+
+    <div id="preview-wrap">
+      <h2>Voorbeeld</h2>
+      <div class="doc" id="doc"></div>
+    </div>
+
+  </div>
+
+  <div class="panel saved-panel">
+    <h2>Opgeslagen facturen</h2>
+    <div id="saved-list"></div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+
+  // ---- Supabase config ----
+  var SUPABASE_URL = 'https://lvqkpogyjobcutjttdqg.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_KRkvUq-jiQ_VOx4DUQZBow_BHiU5u9-';
+  var sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  var DEFAULT_PROFILE = {
+    name: 'Joost de Vos', address: 'Koers 27', city: '1276 GP Huizen',
+    email: 'mail@joostdevos.nl', phone: '0614219426',
+    btw: 'NL192204865B01', iban: 'NL64 ABNA 0595 9439 34', terms: 14
+  };
+
+  var profile = null;
+  var invoices = [];
+  var current = null;
+  var editingId = null;
+  var authMode = 'signin';
+  var currentUser = null;
+
+  function todayISO(d){ var dt = d || new Date(); return dt.toISOString().slice(0,10); }
+  function addDays(iso, days){ var dt = new Date(iso + 'T00:00:00'); dt.setDate(dt.getDate() + days); return todayISO(dt); }
+  function formatDate(iso){ if(!iso) return ''; var p = iso.split('-'); return p[2] + '-' + p[1] + '-' + p[0]; }
+  function euro(n){ return '€ ' + (Math.round(n*100)/100).toLocaleString('nl-NL', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+  function newRegel(){ return { aantal:1, omschrijving:'', prijs:0, btw:0 }; }
+  function escapeHtml(s){ return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function escapeAttr(s){ return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+
+  function blankInvoice(){
+    var d = todayISO();
+    return { id:null, number:'', kenmerk:'', date:d, due:addDays(d,(profile && profile.terms)||14),
+      clientName:'', clientAddress:'', clientCity:'', regels:[newRegel()] };
+  }
+
+  function nextInvoiceNumber(){
+    var year = new Date().getFullYear().toString();
+    var max = 0;
+    invoices.forEach(function(inv){
+      if(inv.number && inv.number.indexOf(year + '-') === 0){
+        var n = parseInt(inv.number.split('-')[1], 10);
+        if(!isNaN(n) && n > max) max = n;
+      }
+    });
+    return year + '-' + String(max + 1).padStart(4, '0');
+  }
+
+  function calcInvoice(inv){
+    var subtotal = 0; var btwGroups = {};
+    inv.regels.forEach(function(r){
+      var lineTotal = (parseFloat(r.aantal)||0) * (parseFloat(r.prijs)||0);
+      subtotal += lineTotal;
+      var rate = parseFloat(r.btw) || 0;
+      btwGroups[rate] = (btwGroups[rate] || 0) + lineTotal * (rate/100);
+    });
+    var btwTotal = 0;
+    Object.keys(btwGroups).forEach(function(k){ btwTotal += btwGroups[k]; });
+    return { subtotal:subtotal, btwGroups:btwGroups, btwTotal:btwTotal, total:subtotal+btwTotal };
+  }
+
+  function setStatus(elId, msg, isError){
+    var el = document.getElementById(elId);
+    el.textContent = msg;
+    el.className = 'status-msg' + (isError ? ' error' : '');
+  }
+
+  // ---------- Auth ----------
+
+  function wireLoginScreen(){
+    document.getElementById('tab-signin').addEventListener('click', function(){
+      authMode = 'signin';
+      this.classList.add('active');
+      document.getElementById('tab-signup').classList.remove('active');
+      document.getElementById('login-submit-btn').textContent = 'Inloggen';
+    });
+    document.getElementById('tab-signup').addEventListener('click', function(){
+      authMode = 'signup';
+      this.classList.add('active');
+      document.getElementById('tab-signin').classList.remove('active');
+      document.getElementById('login-submit-btn').textContent = 'Account maken';
+    });
+    document.getElementById('login-submit-btn').addEventListener('click', function(){
+      var email = document.getElementById('login-email').value.trim();
+      var password = document.getElementById('login-password').value;
+      if(!email || !password){ setStatus('login-status', 'Vul e-mail en wachtwoord in.', true); return; }
+      setStatus('login-status', 'Bezig...', false);
+      var call = authMode === 'signup' ? sb.auth.signUp({email:email, password:password}) : sb.auth.signInWithPassword({email:email, password:password});
+      call.then(function(res){
+        if(res.error){ setStatus('login-status', res.error.message, true); return; }
+        if(authMode === 'signup' && res.data && res.data.user && !res.data.session){
+          setStatus('login-status', 'Account aangemaakt. Check je e-mail om te bevestigen, log daarna in.', false);
+          return;
+        }
+        onAuthed(res.data.session ? res.data.session.user : res.data.user);
+      }).catch(function(){
+        setStatus('login-status', 'Er ging iets mis, probeer het nog eens.', true);
+      });
+    });
+  }
+
+  function onAuthed(user){
+    currentUser = user;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-screen').style.display = 'block';
+    document.getElementById('whoami').textContent = user.email;
+    initApp();
+  }
+
+  document.getElementById('logout-btn') && document.getElementById('logout-btn').addEventListener('click', doLogout);
+  function doLogout(){
+    sb.auth.signOut().then(function(){
+      currentUser = null;
+      document.getElementById('app-screen').style.display = 'none';
+      document.getElementById('login-screen').style.display = 'block';
+      document.getElementById('login-email').value = '';
+      document.getElementById('login-password').value = '';
+    });
+  }
+
+  // ---------- Data (Supabase) ----------
+
+  function loadProfile(){
+    return sb.from('profiles').select('*').eq('user_id', currentUser.id).maybeSingle()
+      .then(function(res){
+        if(res.error) throw res.error;
+        if(res.data){
+          return { name:res.data.name, address:res.data.address, city:res.data.city, email:res.data.email,
+            phone:res.data.phone, btw:res.data.btw, iban:res.data.iban, terms:res.data.terms || 14 };
+        }
+        return Object.assign({}, DEFAULT_PROFILE, {email: currentUser.email});
+      })
+      .catch(function(){ return Object.assign({}, DEFAULT_PROFILE, {email: currentUser.email}); });
+  }
+
+  function saveProfileToDb(){
+    var row = Object.assign({ user_id: currentUser.id, updated_at: new Date().toISOString() }, profile);
+    return sb.from('profiles').upsert(row, { onConflict: 'user_id' }).then(function(res){
+      if(res.error) throw res.error;
+      return true;
+    });
+  }
+
+  function loadInvoices(){
+    return sb.from('invoices').select('*').eq('user_id', currentUser.id).order('number', {ascending:false})
+      .then(function(res){
+        if(res.error) throw res.error;
+        return (res.data || []).map(function(row){
+          return { id:row.id, number:row.number, kenmerk:row.kenmerk, date:row.invoice_date, due:row.due_date,
+            clientName:row.client_name, clientAddress:row.client_address, clientCity:row.client_city, regels:row.regels || [newRegel()] };
+        });
+      })
+      .catch(function(){ return []; });
+  }
+
+  function saveInvoiceToDb(inv){
+    var row = {
+      user_id: currentUser.id, number: inv.number, kenmerk: inv.kenmerk, invoice_date: inv.date, due_date: inv.due,
+      client_name: inv.clientName, client_address: inv.clientAddress, client_city: inv.clientCity,
+      regels: inv.regels, updated_at: new Date().toISOString()
+    };
+    if(inv.id){
+      return sb.from('invoices').update(row).eq('id', inv.id).select().then(function(res){
+        if(res.error) throw res.error;
+        return res.data[0].id;
+      });
+    } else {
+      return sb.from('invoices').insert(row).select().then(function(res){
+        if(res.error) throw res.error;
+        return res.data[0].id;
+      });
+    }
+  }
+
+  function deleteInvoiceFromDb(id){
+    return sb.from('invoices').delete().eq('id', id).then(function(res){
+      if(res.error) throw res.error;
+      return true;
+    });
+  }
+
+  // ---------- Rendering ----------
+
+  function renderProfileForm(){
+    document.getElementById('p-name').value = profile.name || '';
+    document.getElementById('p-email').value = profile.email || '';
+    document.getElementById('p-address').value = profile.address || '';
+    document.getElementById('p-phone').value = profile.phone || '';
+    document.getElementById('p-city').value = profile.city || '';
+    document.getElementById('p-btw').value = profile.btw || '';
+    document.getElementById('p-iban').value = profile.iban || '';
+    document.getElementById('p-terms').value = profile.terms || 14;
+  }
+
+  function renderLineItems(){
+    var container = document.getElementById('line-items-container');
+    container.innerHTML = '';
+    current.regels.forEach(function(r, i){
+      var row = document.createElement('div');
+      row.className = 'line-item';
+      row.innerHTML =
+        '<input type="number" min="0" step="1" value="'+ r.aantal +'" data-i="'+i+'" data-f="aantal">' +
+        '<input type="text" value="'+ escapeAttr(r.omschrijving) +'" placeholder="Omschrijving" data-i="'+i+'" data-f="omschrijving">' +
+        '<input type="number" min="0" step="0.01" value="'+ r.prijs +'" data-i="'+i+'" data-f="prijs">' +
+        '<select data-i="'+i+'" data-f="btw">' +
+          '<option value="0"'+(r.btw==0?' selected':'')+'>0%</option>' +
+          '<option value="9"'+(r.btw==9?' selected':'')+'>9%</option>' +
+          '<option value="21"'+(r.btw==21?' selected':'')+'>21%</option>' +
+        '</select>' +
+        '<button class="remove-btn" data-i="'+i+'" title="Regel verwijderen">×</button>';
+      container.appendChild(row);
+    });
+    container.querySelectorAll('input,select').forEach(function(el){
+      el.addEventListener('input', function(){
+        var i = parseInt(this.getAttribute('data-i'), 10);
+        var f = this.getAttribute('data-f');
+        current.regels[i][f] = this.value;
+        renderTotals(); renderPreview();
+      });
+    });
+    container.querySelectorAll('.remove-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var i = parseInt(this.getAttribute('data-i'), 10);
+        if(current.regels.length > 1){
+          current.regels.splice(i, 1);
+          renderLineItems(); renderTotals(); renderPreview();
+        }
+      });
+    });
+  }
+
+  function renderTotals(){
+    var t = calcInvoice(current);
+    var html = '<div class="trow"><span>Subtotaal</span><span>'+ euro(t.subtotal) +'</span></div>';
+    Object.keys(t.btwGroups).sort().forEach(function(rate){
+      html += '<div class="trow"><span>'+ rate +'% btw</span><span>'+ euro(t.btwGroups[rate]) +'</span></div>';
+    });
+    html += '<div class="trow grand"><span>Totaal</span><span>'+ euro(t.total) +'</span></div>';
+    document.getElementById('totals-box').innerHTML = html;
+  }
+
+  function renderFormFields(){
+    document.getElementById('f-number').value = current.number || '';
+    document.getElementById('f-kenmerk').value = current.kenmerk || '';
+    document.getElementById('f-date').value = current.date || '';
+    document.getElementById('f-due').value = current.due || '';
+    document.getElementById('f-client-name').value = current.clientName || '';
+    document.getElementById('f-client-address').value = current.clientAddress || '';
+    document.getElementById('f-client-city').value = current.clientCity || '';
+    renderLineItems(); renderTotals();
+  }
+
+  function renderPreview(){
+    var t = calcInvoice(current);
+    var rowsHtml = current.regels.map(function(r){
+      var lineTotal = (parseFloat(r.aantal)||0) * (parseFloat(r.prijs)||0);
+      return '<tr><td class="num">'+ (r.aantal||0) +'x</td><td>'+ escapeHtml(r.omschrijving || '—') +'</td>' +
+        '<td class="num">'+ euro(parseFloat(r.prijs)||0) +'</td><td class="num">'+ euro(lineTotal) +'</td>' +
+        '<td class="num">'+ (parseFloat(r.btw)||0) +'%</td></tr>';
+    }).join('');
+    var btwRowsHtml = Object.keys(t.btwGroups).sort().map(function(rate){
+      return '<div class="drow"><span>'+ rate +'% btw</span><span>'+ euro(t.btwGroups[rate]) +'</span></div>';
+    }).join('');
+
+    document.getElementById('doc').innerHTML =
+      '<div class="doc-top"><div class="doc-to">' + escapeHtml(current.clientName || 'Klantnaam') + '<br>' +
+        (current.clientAddress ? escapeHtml(current.clientAddress) + '<br>' : '') +
+        (current.clientCity ? escapeHtml(current.clientCity) : '') + '</div>' +
+        '<div class="doc-from"><div class="name">'+ escapeHtml(profile.name) +'</div>' +
+        escapeHtml(profile.address) + '<br>' + escapeHtml(profile.city) + '<br><br>' +
+        escapeHtml(profile.email) + '<br>' + escapeHtml(profile.phone) + '<br><br>' +
+        'Btw: '+ escapeHtml(profile.btw) + '<br>Bank: '+ escapeHtml(profile.iban) + '</div></div>' +
+      '<div class="doc-heading"><div><h3>Factuur '+ escapeHtml(current.number || '—') +'</h3>' +
+        (current.kenmerk ? '<div class="kenmerk">Kenmerk: '+ escapeHtml(current.kenmerk) +'</div>' : '') + '</div>' +
+        '<div class="doc-meta"><div><b>Factuurdatum:</b>'+ formatDate(current.date) +'</div>' +
+        '<div><b>Vervaldatum:</b>'+ formatDate(current.due) +'</div></div></div>' +
+      '<table class="doc-table"><thead><tr><th></th><th>Omschrijving</th><th class="num">Bedrag</th><th class="num">Totaal</th><th class="num">Btw</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>' +
+      '<div class="doc-totals"><div class="drow"><span>Subtotaal</span><span>'+ euro(t.subtotal) +'</span></div>' + btwRowsHtml +
+        '<div class="drow grand"><span>Totaal</span><span>'+ euro(t.total) +'</span></div></div>' +
+      '<div class="doc-footer">We verzoeken u vriendelijk het bovenstaande bedrag van '+ euro(t.total) +' voor '+ formatDate(current.due) +
+        ' te voldoen op bovenstaande bankrekening onder vermelding van het factuurnummer '+ escapeHtml(current.number || '') +'.</div>';
+  }
+
+  function renderSavedList(){
+    var container = document.getElementById('saved-list');
+    if(invoices.length === 0){
+      container.innerHTML = '<div class="empty-note">Nog geen facturen opgeslagen. Maak hierboven je eerste factuur.</div>';
+      return;
+    }
+    var rows = invoices.map(function(inv){
+      var t = calcInvoice(inv);
+      return '<tr><td>'+ escapeHtml(inv.number) +'</td><td>'+ escapeHtml(inv.clientName || '—') +'</td>' +
+        '<td>'+ formatDate(inv.date) +'</td><td class="num">'+ euro(t.total) +'</td>' +
+        '<td class="num"><button class="ghost small open-btn" data-id="'+ inv.id +'">Openen</button>' +
+        '<button class="ghost small delete-btn" data-id="'+ inv.id +'">Verwijderen</button></td></tr>';
+    }).join('');
+    container.innerHTML = '<table class="saved-table"><thead><tr><th>Nummer</th><th>Klant</th><th>Datum</th><th>Totaal</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+    container.querySelectorAll('.open-btn').forEach(function(btn){ btn.addEventListener('click', function(){ openInvoice(this.getAttribute('data-id')); }); });
+    container.querySelectorAll('.delete-btn').forEach(function(btn){ btn.addEventListener('click', function(){ deleteInvoice(this.getAttribute('data-id')); }); });
+  }
+
+  function openInvoice(id){
+    var inv = invoices.find(function(i){ return i.id === id; });
+    if(!inv) return;
+    editingId = id;
+    current = JSON.parse(JSON.stringify(inv));
+    renderFormFields(); renderPreview();
+    setStatus('form-status', 'Factuur '+ inv.number +' geopend om te bewerken.', false);
+  }
+
+  function deleteInvoice(id){
+    deleteInvoiceFromDb(id).then(function(){
+      invoices = invoices.filter(function(i){ return i.id !== id; });
+      renderSavedList();
+      if(editingId === id) startNewInvoice();
+    }).catch(function(){
+      setStatus('form-status', 'Verwijderen is niet gelukt.', true);
+    });
+  }
+
+  function startNewInvoice(){
+    editingId = null;
+    current = blankInvoice();
+    current.number = nextInvoiceNumber();
+    renderFormFields(); renderPreview();
+    setStatus('form-status', '', false);
+  }
+
+  // ---------- Wiring ----------
+
+  function wireAppScreen(){
+    document.getElementById('f-number').addEventListener('input', function(){ current.number = this.value; renderPreview(); });
+    document.getElementById('f-kenmerk').addEventListener('input', function(){ current.kenmerk = this.value; renderPreview(); });
+    document.getElementById('f-date').addEventListener('input', function(){ current.date = this.value; renderPreview(); });
+    document.getElementById('f-due').addEventListener('input', function(){ current.due = this.value; renderPreview(); });
+    document.getElementById('f-client-name').addEventListener('input', function(){ current.clientName = this.value; renderPreview(); });
+    document.getElementById('f-client-address').addEventListener('input', function(){ current.clientAddress = this.value; renderPreview(); });
+    document.getElementById('f-client-city').addEventListener('input', function(){ current.clientCity = this.value; renderPreview(); });
+
+    document.getElementById('add-line-btn').addEventListener('click', function(){
+      current.regels.push(newRegel()); renderLineItems(); renderTotals(); renderPreview();
+    });
+    document.getElementById('new-invoice-btn').addEventListener('click', startNewInvoice);
+    document.getElementById('toggle-profile-btn').addEventListener('click', function(){
+      var panel = document.getElementById('profile-panel');
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+
+    document.getElementById('save-profile-btn').addEventListener('click', function(){
+      profile.name = document.getElementById('p-name').value;
+      profile.email = document.getElementById('p-email').value;
+      profile.address = document.getElementById('p-address').value;
+      profile.phone = document.getElementById('p-phone').value;
+      profile.city = document.getElementById('p-city').value;
+      profile.btw = document.getElementById('p-btw').value;
+      profile.iban = document.getElementById('p-iban').value;
+      profile.terms = parseInt(document.getElementById('p-terms').value, 10) || 14;
+      saveProfileToDb().then(function(){
+        setStatus('profile-status', 'Gegevens opgeslagen.', false);
+        renderPreview();
+      }).catch(function(){
+        setStatus('profile-status', 'Kon niet opslaan, probeer het nog eens.', true);
+      });
+    });
+
+    document.getElementById('save-invoice-btn').addEventListener('click', function(){
+      if(!current.clientName){ setStatus('form-status', 'Vul in elk geval de klantnaam in.', true); return; }
+      if(!current.number){ current.number = nextInvoiceNumber(); }
+      var toSave = Object.assign({}, current, { id: editingId });
+      saveInvoiceToDb(toSave).then(function(id){
+        current.id = id; editingId = id;
+        var idx = invoices.findIndex(function(i){ return i.id === id; });
+        var stored = JSON.parse(JSON.stringify(current));
+        if(idx >= 0) invoices[idx] = stored; else invoices.unshift(stored);
+        setStatus('form-status', 'Factuur '+ current.number +' opgeslagen.', false);
+        renderSavedList();
+      }).catch(function(err){
+        setStatus('form-status', 'Opslaan is niet gelukt: ' + (err.message || 'onbekende fout'), true);
+      });
+    });
+
+    document.getElementById('export-pdf-btn').addEventListener('click', function(){
+      var el = document.getElementById('doc');
+      var filename = 'factuur-' + (current.number || 'concept') + '.pdf';
+      if(window.html2pdf){
+        html2pdf().set({ margin:0, filename:filename, html2canvas:{scale:2}, jsPDF:{unit:'pt', format:'a4', orientation:'portrait'} })
+          .from(el).save().catch(function(){ window.print(); });
+      } else { window.print(); }
+    });
+  }
+
+  function initApp(){
+    Promise.all([loadProfile(), loadInvoices()]).then(function(results){
+      profile = results[0];
+      invoices = results[1];
+      renderProfileForm();
+      renderSavedList();
+      wireAppScreen();
+      startNewInvoice();
+    });
+  }
+
+  // ---------- Boot ----------
+
+  wireLoginScreen();
+  sb.auth.getSession().then(function(res){
+    if(res.data && res.data.session){ onAuthed(res.data.session.user); }
+  });
+
+})();
+</script>
+</body>
+</html>
