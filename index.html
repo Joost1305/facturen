@@ -129,8 +129,25 @@
   <div class="field"><label>E-mail</label><input id="login-email" type="email" autocomplete="username"></div>
   <div class="field"><label>Wachtwoord</label><input id="login-password" type="password" autocomplete="current-password"></div>
   <button id="login-submit-btn" class="primary" style="width:100%;">Inloggen</button>
+  <div style="text-align:center; margin-top:10px;">
+    <button id="forgot-link-btn" class="ghost small">Wachtwoord vergeten?</button>
+  </div>
   <div id="login-status" class="status-msg"></div>
+
+  <div id="forgot-panel" style="display:none; margin-top:14px; padding-top:14px; border-top:1px solid var(--line);">
+    <p class="sub" style="margin-bottom:10px;">Vul je e-mail in, dan sturen we een link om een nieuw wachtwoord in te stellen.</p>
+    <div class="field"><label>E-mail</label><input id="forgot-email" type="email"></div>
+    <button id="forgot-submit-btn" class="primary" style="width:100%;">Reset-link versturen</button>
+    <div id="forgot-status" class="status-msg"></div>
+  </div>
 </div>
+
+<div id="reset-screen" style="display:none; max-width:360px; margin:80px auto; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:28px;">
+  <h1 style="font-family:'Spectral', serif; font-size:22px; margin:0 0 4px;">Nieuw wachtwoord</h1>
+  <p class="sub" style="color:var(--ink-soft); font-size:13px; margin:0 0 20px;">Kies een nieuw wachtwoord voor je account.</p>
+  <div class="field"><label>Nieuw wachtwoord</label><input id="reset-password" type="password" autocomplete="new-password"></div>
+  <button id="reset-submit-btn" class="primary" style="width:100%;">Wachtwoord instellen</button>
+  <div id="reset-status" class="status-msg"></div>
 
 <div class="app" id="app-screen" style="display:none;">
 
@@ -313,6 +330,25 @@
       }).catch(function(){
         setStatus('login-status', 'Er ging iets mis, probeer het nog eens.', true);
       });
+    });
+
+    document.getElementById('forgot-link-btn').addEventListener('click', function(){
+      var panel = document.getElementById('forgot-panel');
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      var prefill = document.getElementById('login-email').value.trim();
+      if(prefill) document.getElementById('forgot-email').value = prefill;
+    });
+
+    document.getElementById('forgot-submit-btn').addEventListener('click', function(){
+      var email = document.getElementById('forgot-email').value.trim();
+      if(!email){ setStatus('forgot-status', 'Vul je e-mailadres in.', true); return; }
+      setStatus('forgot-status', 'Bezig...', false);
+      sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname })
+        .then(function(res){
+          if(res.error){ setStatus('forgot-status', res.error.message, true); return; }
+          setStatus('forgot-status', 'Check je inbox voor de reset-link.', false);
+        })
+        .catch(function(){ setStatus('forgot-status', 'Versturen is niet gelukt, probeer het nog eens.', true); });
     });
   }
 
@@ -660,11 +696,38 @@
     });
   }
 
+  function wireResetScreen(){
+    document.getElementById('reset-submit-btn').addEventListener('click', function(){
+      var pw = document.getElementById('reset-password').value;
+      if(!pw || pw.length < 6){ setStatus('reset-status', 'Kies een wachtwoord van minstens 6 tekens.', true); return; }
+      setStatus('reset-status', 'Bezig...', false);
+      sb.auth.updateUser({ password: pw }).then(function(res){
+        if(res.error){ setStatus('reset-status', res.error.message, true); return; }
+        document.getElementById('reset-screen').style.display = 'none';
+        onAuthed(res.data.user);
+      }).catch(function(){
+        setStatus('reset-status', 'Instellen is niet gelukt, probeer het nog eens.', true);
+      });
+    });
+  }
+
   // ---------- Boot ----------
 
   wireLoginScreen();
+  wireResetScreen();
+
+  sb.auth.onAuthStateChange(function(event, session){
+    if(event === 'PASSWORD_RECOVERY'){
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app-screen').style.display = 'none';
+      document.getElementById('reset-screen').style.display = 'block';
+    }
+  });
+
   sb.auth.getSession().then(function(res){
-    if(res.data && res.data.session){ onAuthed(res.data.session.user); }
+    if(res.data && res.data.session && document.getElementById('reset-screen').style.display !== 'block'){
+      onAuthed(res.data.session.user);
+    }
   });
 
 })();
