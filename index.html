@@ -232,6 +232,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
       <div class="actions-row">
         <button id="save-invoice-btn" class="primary">Factuur opslaan</button>
         <button id="export-pdf-btn">Exporteren als PDF</button>
+        <button id="copy-mail-btn">Kopieer mailtekst</button>
       </div>
       <div id="form-status" class="status-msg"></div>
     </div>
@@ -569,6 +570,66 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
         ' te voldoen op bovenstaande bankrekening onder vermelding van het factuurnummer '+ escapeHtml(current.number || '') +'.</div>';
   }
 
+  // ---------- Mailtekst ----------
+
+  function aanhef(clientName){
+    var naam = (clientName || '').trim();
+    var m = naam.match(/t\.a\.v\.?\s*(.+)$/i);
+    if(m){
+      var eerste = m[1].trim().split(/\s+/)[0];
+      if(eerste) return eerste;
+    }
+    return naam || 'klant';
+  }
+
+  function langeDatum(iso){
+    if(!iso) return '';
+    return new Date(iso + 'T00:00:00').toLocaleDateString('nl-NL', { day:'numeric', month:'long', year:'numeric' });
+  }
+
+  function omschrijvingTekst(inv){
+    var delen = inv.regels
+      .map(function(r){
+        var tekst = (r.omschrijving || '').trim();
+        var aantal = parseFloat(r.aantal) || 0;
+        if(tekst && aantal > 1 && !/^\d/.test(tekst)) tekst = aantal + ' ' + tekst;
+        return tekst;
+      })
+      .filter(function(s){ return s; });
+    if(delen.length === 0) return 'geleverde diensten';
+    if(delen.length === 1) return delen[0];
+    return delen.slice(0, -1).join(', ') + ' en ' + delen[delen.length - 1];
+  }
+
+  function maakMailtekst(inv){
+    var t = calcInvoice(inv);
+    return 'Onderwerp: Factuur ' + inv.number + '\n\n' +
+      'Beste ' + aanhef(inv.clientName) + ',\n\n' +
+      'Bijgaand vind je factuur ' + inv.number + ' voor ' + omschrijvingTekst(inv) + '.\n\n' +
+      'Hartelijk dank voor de bestelling. Zou je het bedrag van ' + euro(t.total) + ' voor ' + langeDatum(inv.due) +
+      ' willen overmaken op het rekeningnummer dat op de factuur staat, onder vermelding van het factuurnummer?\n\n' +
+      'Als je vragen hebt, hoor ik het graag.\n\n' +
+      'Met vriendelijke groet,\n' + (profile.name || '');
+  }
+
+  function kopieerTekst(tekst){
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      return navigator.clipboard.writeText(tekst);
+    }
+    return new Promise(function(resolve, reject){
+      var ta = document.createElement('textarea');
+      ta.value = tekst;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch(e) {}
+      document.body.removeChild(ta);
+      ok ? resolve() : reject();
+    });
+  }
+
   function renderSavedList(){
     var container = document.getElementById('saved-list');
     if(invoices.length === 0){
@@ -579,10 +640,26 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
       var t = calcInvoice(inv);
       return '<tr><td>'+ escapeHtml(inv.number) +'</td><td>'+ escapeHtml(inv.clientName || '—') +'</td>' +
         '<td>'+ formatDate(inv.date) +'</td><td class="num">'+ euro(t.total) +'</td>' +
-        '<td class="num"><button class="ghost small open-btn" data-id="'+ inv.id +'">Openen</button>' +
+        '<td class="num"><button class="ghost small mail-btn" data-id="'+ inv.id +'">Kopieer mailtekst</button>' +
+        '<button class="ghost small open-btn" data-id="'+ inv.id +'">Openen</button>' +
         '<button class="ghost small delete-btn" data-id="'+ inv.id +'">Verwijderen</button></td></tr>';
     }).join('');
     container.innerHTML = '<table class="saved-table"><thead><tr><th>Nummer</th><th>Klant</th><th>Datum</th><th>Totaal</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+    container.querySelectorAll('.mail-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = this.getAttribute('data-id');
+        var inv = invoices.find(function(i){ return i.id === id; });
+        var knop = this;
+        if(!inv) return;
+        kopieerTekst(maakMailtekst(inv)).then(function(){
+          knop.textContent = 'Gekopieerd';
+          setTimeout(function(){ knop.textContent = 'Kopieer mailtekst'; }, 2000);
+        }).catch(function(){
+          knop.textContent = 'Kopiëren mislukt';
+          setTimeout(function(){ knop.textContent = 'Kopieer mailtekst'; }, 2500);
+        });
+      });
+    });
     container.querySelectorAll('.open-btn').forEach(function(btn){ btn.addEventListener('click', function(){ openInvoice(this.getAttribute('data-id')); }); });
     container.querySelectorAll('.delete-btn').forEach(function(btn){ btn.addEventListener('click', function(){ deleteInvoice(this.getAttribute('data-id')); }); });
   }
@@ -689,6 +766,14 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
         renderSavedList();
       }).catch(function(err){
         setStatus('form-status', 'Opslaan is niet gelukt: ' + (err.message || 'onbekende fout'), true);
+      });
+    });
+
+    document.getElementById('copy-mail-btn').addEventListener('click', function(){
+      kopieerTekst(maakMailtekst(current)).then(function(){
+        setStatus('form-status', 'Mailtekst gekopieerd, plak hem in je e-mail.', false);
+      }).catch(function(){
+        setStatus('form-status', 'Kopiëren is niet gelukt.', true);
       });
     });
 
